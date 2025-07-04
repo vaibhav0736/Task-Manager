@@ -1,0 +1,289 @@
+try {
+        //fetch all tasks and assigned user info
+        const tasks=await Task.find().populate("assignedTo","name email") 
+
+
+
+        //create a new excel workbook and a worksheet
+        const workbook=new excelJS.workbook();
+        const worksheet=workbook.addWorksheet("All tasks");
+
+
+        //define the columns of the excel sheet
+        worksheet.columns=[
+            {  header:"Task ID", key:"_id", width:25 },
+
+              {  header:"Title", key:"title", width:30 },
+              {  header:"Description", key:"description", width:50 },
+
+              {  header:"Status", key:"status", width:20},
+              {  header:"Priority", key:"priority", width:15},
+              {  header:"Due Date", key:"dueDate", width:20 },
+              {  header:"Assigned To", key:"assignedTo", width:25 },
+
+        ]
+
+        
+              //add rows to the excel
+              tasks.forEach((task)=>{
+                const assignedTo=task.assignedTo
+                .map((user) => `${user.name} (${user.email})`)
+                .join(", ");
+        
+                worksheet.addRow({
+                    _id:task._id,
+                    title:task.title,
+                    description:task.description,
+                    status:task.status,
+                    priority:task.priority,
+                    dueDate:task.toISOString().split("T")[0],
+                    assignedTo:assignedTo || "Unassigned",
+                });
+             });
+              //Tells the browser this is an Excel file.
+
+             res.setHeader(
+                "Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              );
+        //Tells the browser to download the file (not just show it).
+
+              res.setHeader(
+                "Content-Disposition",
+                "attachment; filename=tasks_report.xlsx"
+              );
+
+            //   Writes the Excel workbook to the HTTP response.
+
+              workbook.xlsx.write(res).then(() => {
+               res.end(); // End the response after writing is complete
+             });
+            
+        
+    }
+    catch(error)
+    {
+        res
+        .status(500)
+        .json({message: "Error exporting tasks",error:error.message});
+
+
+    }
+};
+
+
+
+const tasks = await Task.find().populate("assignedTo", "name email")----->
+
+const: Declares a constant variable (cannot be reassigned).
+tasks: The variable where all fetched tasks will be stored.
+await: Wait for the asynchronous operation to complete.
+Task.find(): Fetch all tasks from the Task collection.
+.populate("assignedTo", "name email"): Replace the assignedTo ID in each task with user details (name and email).
+
+
+📘 const workbook = new excelJS.Workbook();
+excelJS.Workbook(): Creates a new Excel file in memory (from the exceljs library).
+workbook: Variable to hold the entire Excel workbook (file).
+
+ const worksheet = workbook.addWorksheet("All tasks");
+.addWorksheet("All tasks"): Adds a new worksheet (sheet/tab) to the workbook, with the name "All tasks".
+
+
+worksheet.columns = [
+  { header: "Task ID", key: "_id", width: 25 },
+  ...
+];
+
+Each object defines a column in Excel:
+
+header: Column name shown at the top.
+key: Key to match task data
+width: Width of the column in Excel units.
+
+
+tasks.forEach((task) => {
+  const assignedTo = task.assignedTo
+    .map((user) => `${user.name} (${user.email})`)
+    .join(", ");
+
+forEach: Loop through each task.
+assignedTo: If multiple users are assigned, format them as "Name (email)".
+.map(): Go through each assigned user and format string.
+.join(", "): If multiple users, join them into one string with commas.
+
+
+worksheet.addRow({
+  _id: task._id,
+  title: task.title,
+  description: task.description,
+  status: task.status,
+  priority: task.priority,
+  dueDate: task.dueDate.toISOString().split("T")[0],
+  assignedTo: assignedTo || "Unassigned",
+});
+
+addRow({...}): Adds a new row to the worksheet.
+task.dueDate.toISOString().split("T")[0]: Converts the date into a readable YYYY-MM-DD format.
+
+
+
+🧪 .toISOString()
+This converts the date to a string in this format:
+"2025-04-12T10:30:00.000Z"
+
+
+🔪 .split("T")
+This splits the string at the "T" character.
+"2025-04-12T10:30:00.000Z" becomes:
+["2025-04-12", "10:30:00.000Z"]
+
+🧮 [0]
+This grabs the first part of the split array:
+"2025-04-12" (the date only)
+
+
+
+res.setHeader(
+  "Content-Type",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+);
+res.setHeader(): Set HTTP response headers.
+Content-Type: Tells browser the file is an Excel file.
+
+
+res.setHeader(
+  "Content-Disposition",
+  "attachment; filename=tasks_report.xlsx"
+);
+Content-Disposition: Tells browser to download file instead of displaying.
+attachment: Forces download.
+filename=...: Sets name of the file
+
+
+workbook.xlsx.write(res).then(() => {
+  res.end(); // End the response after writing is complete
+});
+write(res): Write Excel data directly into the HTTP response.
+.then(() => { res.end(); }): When writing is done, end the response.
+
+
+
+-----------------------------------------------------------------------------------------
+🧠 Big Picture: What Is This Code Doing?
+You are:
+
+🧑‍💻 Getting all users.
+✅ Getting all tasks (with assigned users populated).
+📊 Mapping how many tasks are assigned to each user and categorizing them by status.
+📄 Creating an Excel file with that info.
+💾 Sending the Excel file to the user as a downloadable response.
+
+
+const users = await User.find().select("name email _id").lean();
+
+
+You're pulling all users with only their `name`, `email`, and `_id`. 
+You're using `.lean()` 
+so Mongoose gives you **plain JavaScript objects**, which are faster and easier to work with.
+
+📋 GET ALL TASKS WITH ASSIGNED USERS POPULATED
+Each task has a assignedTo field that refers to users (maybe one or many).
+By using .populate(...), you're replacing the user IDs with actual user objects containing name, email, and _id.
+
+
+const userTaskMap = {};
+
+You're preparing an **empty object to store each user's task report** like this:
+```json
+{
+  "userId123": {
+    name: "Vaibhav",
+    email: "vaibhav@gmail.com",
+    taskCount: 5,
+    pendingTasks: 2,
+    ...
+  }
+}
+users.forEach((user) => { userTaskMap[user._id] = { name: user.name, email: user.email, taskCount: 0, pendingTasks: 0, inProgressTasks: 0, completedTasks: 0, }; });
+
+
+You're creating a fresh report object for each user in `userTaskMap`.
+For each task, you:
+Check if it has assigned users.
+For each assigned user, safely extract the user’s _id.
+
+
+  if (userTaskMap[userId]) {
+    userTaskMap[userId].taskCount += 1;
+     if (task.status === "Pending") {
+          userTaskMap[userId].pendingTasks += 1;
+        } else if (task.status === "In Progress") {
+          userTaskMap[userId].inProgressTasks += 1;
+        } else if (task.status === "Completed") {
+          userTaskMap[userId].completedTasks += 1;
+    
+
+
+Now your userTaskMap looks like:
+
+{
+  "643bf...": {
+    name: "Amit",
+    email: "amit@example.com",
+    taskCount: 3,
+    pendingTasks: 1,
+    inProgressTasks: 1,
+    completedTasks: 1,
+  },
+  ...
+}
+
+
+
+const workbook = new excelJS.Workbook();
+const worksheet = workbook.addWorksheet("Task Report");
+
+
+worksheet.columns = [ { header: "User Name", key: "name", width: 30 }, { header: "Email", key: "email", width: 40 },
+ { header: "Total Assigned Tasks", key: "taskCount", width: 20 }, { header: "Pending Tasks", key: "pendingTasks", width: 20 },
+  { header: "In Progress Tasks", key: "inProgressTasks", width: 20 }, { header: "Completed Tasks", key: "completedTasks", width: 20 }, ];
+
+
+  
+This defines the **headers** of your Excel file. So visually your Excel sheet will look like:
+
+| User Name | Email | Total Assigned Tasks | Pending Tasks | In Progress Tasks | Completed Tasks |
+|-----------|-------|----------------------|----------------|--------------------|------------------|
+| Vaibhav   | vaib@example.com | 3 | 1 | 1 | 1 |
+| Anjali    | anjali@example.com | 2 | 0 | 1 | 1 |
+
+
+Object.values(userTaskMap).forEach((user) => {
+  worksheet.addRow(user);
+});
+
+
+Object.values(...) gets an array of all user report objects.
+.forEach(...) adds each one as a row in your Excel file.
+
+
+
+res.setHeader(
+  "Content-Type",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+);
+res.setHeader(
+  "Content-Disposition",
+  "attachment; filename=tasks_report.xlsx"
+);
+
+
+his tells the browser:
+🧠 “Hey, I’m sending an Excel file!”
+⬇️ “Download it as tasks_report.xlsx.”
+
+workbook.xlsx.write(res).then(() => {
+  res.end(); // 🔚 Stop after sending file
+});
+This writes the Excel workbook directly to the HTTP response stream (res) and ends the response once complete

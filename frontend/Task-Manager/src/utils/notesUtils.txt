@@ -1,0 +1,21 @@
+What is apiPaths?
+apiPaths is typically an object or module used to define and manage all API endpoint URLs in one centralized place in your project.
+
+Why Use apiPaths?
+✅ Centralized management of all API URLs.
+✅ Avoids hardcoding strings in multiple places.
+✅ Easier to maintain and update endpoints.
+✅ Cleaner and more readable code.
+
+
+---------------------------------------------------------------------------------------------------------------------------------
+What is axiosInstance?
+1.axiosInstance is a custom configured instance of Axios — a promise-based HTTP client for making API requests (GET, POST, etc.) in JavaScript/React/Node.js.
+2.Instead of writing the full Axios config every time you make a request, you can create an instance with base configuration and reuse it throughout your app.
+
+Why Use axiosInstance?
+
+✅ Set a common baseURL for all requests.
+✅ Automatically attach headers like auth tokens.
+✅ Add request/response interceptors (e.g., for logging, error handling, refresh tokens).
+✅ DRY (Don't Repeat Yourself) — cleaner and reusable code

@@ -1,0 +1,23 @@
+browserrouter---
+    BrowserRouter is a component that enables client-side routing in a React application. It listens to changes in the URL and renders the appropriate components accordingly.
+----------------------------------------------------------------------------------------
+Routes----
+    ..This is a container for defining multiple Route components.
+
+    ..Introduced in React Router v6, replacing the older <Switch> component.
+----------------------------------------------------------------------------------------
+Route----
+     Defines the path and the corresponding component to be rendered.
+
+-----------------------------------------------------------------------------------------
+<Route element={<PrivateRoute allowedRoles={["admin"]}  />} >
+<Route path="/admin/dashboard" element={<Dashboard />} />
+</Route>
+
+<PrivateRoute> is a wrapper component that checks if the user has the required role before allowing access.
+
+The allowedRoles={["admin"]} prop means only users with the "admin" role can access the Dashboard component.
+
+If the user is not authorized, <PrivateRoute> will likely redirect them to another page (like a login or "Not Authorized" page).
+
+----------------------------------------------------------------------------------------------

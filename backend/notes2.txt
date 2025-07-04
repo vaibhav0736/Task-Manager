@@ -1,0 +1,1113 @@
+now starting userroute-----
+
+mention the ---->
+app.use("/api/users",userRoutes); in server.js
+
+
+move to userroute--->
+
+// usermanagement route----
+
+router.get('/',protect,adminOnly,getUsers);
+router.get("/:id",protect,getUserById);
+router.delete('/:id',protect,adminOnly,deleteUser);
+
+then making the routes in usercontroller--->
+
+
+// @desc    Get all users (Admin only)
+// @route   GET /api/users
+// @access  Private/Admin
+1.for getting all the users---->
+
+const users = await User.find().select("-password");
+
+Fetches all users from the MongoDB database using the User model.
+.select("-password") means exclude the password field from the returned user documents for security reasons.
+So now users is an array of user objects
+
+const usersWithTaskCounts = await Promise.all(
+
+We want to add task counts to each user, so we use .map() to go through each user.
+But .map() with async/await returns a promise for each user, so Promise.all() is used to wait for all promises to resolve.
+This means the entire batch of users will be enriched with task data at once, in parallel.
+
+users.map(async (user) => {
+
+Iterating over each user in the users array.
+Declaring each map function as async so we can await DB calls for that user’s tasks.
+
+const pendingTasks = await Task.countDocuments({
+  assignedTo: user._id,
+  status: "Pending",
+});
+
+Counts the number of tasks where:
+  1.assignedTo matches this user’s _id
+  2.status is "Pending"
+Task.countDocuments() is a Mongoose method that efficiently counts documents without retrieving them.
+
+
+const completedTasks = await Task.countDocuments({
+  assignedTo: user._id,
+  status: "Completed",
+});
+
+Counts tasks that are marked as "Completed" for this user.
+
+
+return {
+  ...user._doc,
+  pendingTasks,
+  inProgressTasks,
+  completedTasks,
+};
+
+...user._doc: Spreads all existing user fields (_id, name, email, etc.)
+_doc is how Mongoose exposes the actual document data when using find() or findOne()
+pendingTasks, inProgressTasks, completedTasks: These are the task counts we just calculated.
+
+
+The result is a single object like this:
+
+{
+  _id: "...",
+  name: "...",
+  email: "...",
+  role: "...",
+  profileImageUrl: "...",
+  pendingTasks: 3,
+  inProgressTasks: 1,
+  completedTasks: 5
+}
+
+
+
+-----------------------------------------------------------------------------
+
+// @desc    Get user by ID
+// @route   GET /api/users/:id
+// @access  Private
+const getUserById = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id).select("-password");
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+
+
+
+const user = await User.findById(req.params.id).select("-password");
+
+User.findById(req.params.id):
+This fetches the user with the _id that matches req.params.id.
+req.params.id comes from the URL (e.g., /api/users/6614f1ed...)
+
+.select("-password"):
+This tells Mongoose to exclude the password field from the returned user document.
+We don’t want to send sensitive data like passwords to the client, even if they are hashed.
+
+
+
+For a successful user:---->
+
+{
+  "_id": "6614f1ed897232...",
+  "name": "Vaibhav Awasthi",
+  "email": "vaibhav@gmail.com",
+  "role": "member",
+  "profileImageUrl": "http://localhost:5000/uploads/profile.png"
+}
+
+-----------------------------------------------------------------------------------------------
+// @desc    Delete a user (Admin only)
+// @route   DELETE /api/users/:id
+// @access  Private/Admin
+
+
+const deleteUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        await user.deleteOne();
+        res.status(200).json({ message: "User deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+
+await user.deleteOne();
+
+
+This deletes the user from MongoDB.
+
+Since you've already fetched the user document above, you can directly call .deleteOne() on that instance.
+This is safer and slightly more efficient than calling User.findByIdAndDelete() again.
+
+
+
+
+
+module.exports = {
+    getUsers,
+    getUserById,
+    deleteUser,
+};
+---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------
+now creating taskss---
+
+first crate all the routes in the taskroutes--like
+\
+router.get("/dashboard-data",protect,getDashboardData);
+router.get("/user-dashboard-data",protect,getUserDashboardData);
+router.get("/",protect,getTasks);
+router.get("/:id",protect,getTaskById);
+router.post("/",protect,adminOnly,createTask);
+router.put('/:id',protect,updateTask);
+router.delete('/:id',protect,adminOnly,deleteTask);
+router.put('/:id/status',protect,updateTaskStatus);
+router.put("/:id/todo",protect,updateTaskChecklist);
+
+
+
+now creating the user function(createuser)----->
+
+  const {
+      title,
+      description,
+      priority,
+      dueDate,
+      assignedTo,
+      todoChecklist,
+      attachments,
+    } = req.body;
+
+🔹 This is object destructuring. 
+    It extracts specific fields from the req.body (the data sent from frontend). 
+    These will be used to create the new task.
+
+
+
+For example, if you send a POST request like this:
+
+{
+  "title": "Fix bugs",
+  "description": "Fix critical UI bugs",
+  "priority": "High",
+  "assignedTo": ["userId1", "userId2"]
+}
+
+Then title = "Fix bugs", assignedTo = ["userId1", "userId2"], etc.
+
+-------------------------
+ if (!Array.isArray(assignedTo)) {
+🔸 This checks if the assignedTo field is actually an array (which it should be, since a task might be assigned to multiple users).
+
+Array.isArray(value) is a built-in JavaScript method used to determine if the provided value is an Array object.
+✅ Returns true if the value is an array
+❌ Returns false if it’s anything else (like object, string, number, null, undefined, etc.)
+
+
+ return res.status(400).json({
+  message: "assignedTo must be an array of user IDs",
+});
+
+🔹 If assignedTo is not an array, this line sends back a 400 Bad Request response with a helpful message. This prevents the backend from storing bad data.
+
+-------------------------
+
+
+    const task = await Task.create({
+      title,
+      description,
+      priority,
+      dueDate,
+      assignedTo,
+      createdBy: req.user._id,
+      todoChecklist,
+      attachments,
+    });
+
+
+🔸 This uses the Mongoose .create() method to create and insert a new task into the database.
+createdBy: req.user._id → This automatically sets the creator of the task using the logged-in user. req.user is set by your protect middleware after verifying the JWT.
+All other fields come from the frontend via req.body.
+
+✅ Once this line runs successfully, the task is stored in MongoDB.
+
+
+
+   res.status(201).json({
+      message: "Task created successfully",
+      task,
+    });
+🔹 Sends a 201 Created response back to the client with:
+
+
+
+
+
+-------------------------------------------------------------------------------------------
+ const {status}=req.query;
+        let filter={};
+
+        if(status)
+        {
+            filter.status=status;
+        }
+
+        let tasks;
+
+        if(req.user.role==="admin")
+        {
+            tasks=await Task.find(filter)
+            .populate(
+                "assignedTo",
+                "name email profileImageUrl"
+            );
+        }
+        else
+        {
+            tasks=await Task.find({...filter,assignedTo: req.user._id}).populate(
+                "assignedTo",
+                "name email profileImageUrl"
+            );
+
+
+
+const { status } = req.query;
+
+
+✅ What is req.query?
+In Express.js, req.query refers to the query parameters in the URL. These are the key-value pairs that come after the ? symbol in the URL.
+
+You’re destructuring the status property from the request’s query parameters.
+Example URL: GET /api/tasks?status=pending → status would be "pending"
+This allows users to filter tasks by their status (like "pending", "completed", etc.).
+
+
+ Example URL:
+GET /api/tasks?status=Completed
+
+In this case:
+req.query = { status: "Completed" }
+So when we write const { status } = req.query;, it extracts:
+status = "Completed";
+
+
+let filter = {};
+
+This initializes an empty filter object.
+
+You’ll later populate it based on the presence of query parameters.
+This object is passed to Task.find(filter) to limit results.
+
+
+
+if (status) {
+    filter.status = status;
+}
+
+If the status query exists, you add it to the filter object.
+So now filter might look like: { status: "pending" }
+
+
+let tasks;
+Declares a variable that will later hold the array of tasks fetched from the database.
+
+
+if (req.user.role === "admin") {
+
+You're checking if the logged-in user is an admin.
+Admins can see all tasks, regardless of who they are assigned to.
+
+
+
+ tasks = await Task.find(filter)
+        .populate(
+            "assignedTo",
+            "name email profileImageUrl"
+);
+
+✅ What is populate()?
+It's a Mongoose method that replaces the assignedTo field (which normally holds just a user ID like 6615...) with the actual user document.
+
+Task.find(filter): Fetches tasks based on the filter (status if provided).
+.populate(...):
+
+   Mongoose function that replaces the assignedTo user ID with full user data.
+   "assignedTo": The field in your Task schema that references a user.
+    "name email profileImageUrl": Only these fields will be fetched from the User document.
+
+So the result is: each task will include assignedTo: { name, email, profileImageUrl } instead of just a user ID.
+
+
+
+
+
+    tasks = await Task.find({ ...filter, assignedTo: req.user._id }).populate(
+        "assignedTo",
+        "name email profileImageUrl"
+    );
+
+
+{ ...filter, assignedTo: req.user._id }:
+
+This combines any existing filter (like status) with a new one: assignedTo should be the current user’s ID.
+So the user only sees their own tasks, not others'.
+Same .populate() logic is applied to enrich the assignedTo field.
+
+
+✅ What is populate()?
+It's a Mongoose method that replaces the assignedTo field (which normally holds just a user ID like 6615...) with the actual user document.
+
+✅ What does "assignedTo" mean here?
+It tells Mongoose: “Go to the assignedTo field in the task document, and replace the ID with the full user info.”
+
+✅ What does "name email profileImageUrl" mean?
+You’re selecting specific fields from the related User model.
+
+Instead of pulling all user info, you limit it to only:
+name
+email
+profileImageUrl
+
+User Type	     Tasks Fetched	                              Populated Fields
+Admin	         All tasks (filtered by status if given)	  assignedTo → { name, email, profileImageUrl }
+
+Non-Admin	     Only tasks assigned to them                   Same populated fields
+                   (assignedTo == their ID)	             
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  //add completed todochecklist count to each task
+       
+       
+       tasks=await Promise.all(
+            tasks.map(async (task) => {
+                const completedCount=task.todoCheckList.filter(
+                    (item) =>  item.completed
+                ).length;
+                return {...task._doc,completedTodoCount:completedCount};
+     })
+    );
+
+
+tasks = await Promise.all(  ----->
+
+Promise.all([...]): This function takes an array of Promises and waits for all of them to resolve.
+await: You're waiting until all Promises are resolved before proceeding.
+You're reassigning tasks with the modified data returned from each .map() operation (we'll get into that next).
+
+
+✅ Why Promise.all?
+It's helpful when you have multiple async operations (like fetching or modifying data asynchronously). Even though your .map() doesn't seem to
+ contain asynchronous logic now, this is a good future-proofing habit in case you add any async logic (e.g., DB calls or file uploads) inside the loop.
+
+  
+  
+ tasks.map(async (task) => {
+
+You're using .map() to loop through each task in the tasks array.
+.map() creates a new array with the results of calling a function on every element in the original array.
+You're passing an async function to .map() so you can use await inside it if needed.
+task: this is each individual task object from your tasks array.
+
+
+
+    const completedCount = task.todoCheckList.filter(
+      (item) => item.completed
+    ).length;
+
+
+Let’s break this down into even smaller pieces:
+
+✅ task.todoCheckList
+This refers to the todoCheckList array inside each task object.
+
+It’s assumed to be an array of sub-tasks or checklist items.
+
+✅ .filter((item) => item.completed)
+.filter() creates a new array containing only those items where the condition is true.
+
+Here, you're filtering to find only the items where item.completed === true.
+
+✅ .length
+This returns the count of completed items (i.e., how many sub-tasks have been marked as completed).
+
+✅ completedCount
+This stores the total number of completed items in that task’s todoCheckList.
+
+
+
+
+return { ...task._doc, completedTodoCount: completedCount };
+
+
+This is the final returned object from the .map() function for each task.
+
+✅ ...task._doc
+This spreads all original task data from the Mongoose document.
+
+In Mongoose, task is often a special object, and the actual data lives inside the . _doc property.
+
+This line means: “Take all original fields of the task and include them in the new object.”
+
+✅ completedTodoCount: completedCount
+You are adding a new field to the returned object: completedTodoCount, which holds the number of completed checklist items.
+
+
+
+The final result for each task might look like:
+
+{
+  "_id": "taskId123",
+  "title": "Design Login Page",
+  "todoCheckList": [ ... ],
+  "completedTodoCount": 2
+}
+
+-------------------------------------
+
+//status summary counts
+
+const allTasks=await Task.countDocuments(
+  req.user.role==="admin" ? {}:{assignedTo: req.user._id}
+
+);
+
+const pendingTasks=await Task.countDocuments({
+  ...filter,
+  status:"Pending",
+  ...(req.user.role!=="admin" && {assignedTo:req.user._id}),
+});
+
+const inProgressTasks=await Task.countDocuments({
+  ...filter,
+  status:"In Progress",
+  ...(req.user.role!=="admin" && {assignedTo:req.user._id}),
+});
+
+const completedTasks=await Task.countDocuments({
+  ...filter,
+  status:"Completed",
+  ...(req.user.role!=="admin" && {assignedTo:req.user._id}),
+});
+
+res.json({
+  tasks,
+  statusSummary: {
+    all:allTasks,
+    pendingTasks,
+    inProgressTasks,
+    completedTasks,
+  },
+})
+
+
+countDocuments() — What is it?
+countDocuments() is a Mongoose method that returns the number of documents in a collection that match a given filter/query.
+
+
+req.user.role==="admin" ? {}:{assignedTo: req.user._id}
+
+Admin: Gets all tasks → {} (no filter).
+Member: Only gets tasks assigned to them → { assignedTo: req.user._id }
+
+
+✅ ...(req.user.role !== "admin" && { assignedTo: req.user._id })
+
+Uses a JS trick: spread operator with a condition.
+If condition is true, spreads the object { assignedTo: req.user._id }.
+If false, spreads false, which becomes nothing — safe and clean.
+
+
+------------------------------------------------------------------------
+update task----
+
+const updateTask=async(req,res) =>
+    {
+        try {
+            const task=await Task.findById(req.params.id);
+
+            if(!task)
+            {
+                return res.status(404).json({message:"task not found"});
+            }
+
+            //
+            task.title=req.body.title || task.title;
+            task.description=req.body.description || task.description;
+            task.priority=req.body.priority || task.priority;
+            task.dueDate=req.body.dueDate || task.dueDate;
+            task.todoCheckList=req.body.todoCheckList || task.todoCheckList;
+            task.attachments=req.body.attachments || task.attachments;
+
+
+            if(req.body.assignedTo)
+            {
+                if(!Array.isArray(req.body.assignedTo))
+                {
+                    return res.status(400).json({message:"assignedTo must be an array of user IDS", });
+
+                }
+
+                task.assignedTo=req.body.assignedTo;
+            }
+
+            const updatedTask=await task.save();
+
+            res.json({
+                message:"Task updated successfully",
+                task:updatedTask,
+            });
+
+            
+        } catch (error) 
+        {
+            res.status(500).json({message:"server error",error:error.message});
+            
+        }
+    
+    }
+
+
+
+first find the taskw ith the task id
+if task is not available then return response 
+if task is available then change the required field with the updated one or does not change leave default 
+
+
+if (!Array.isArray(req.body.assignedTo)) {
+            return res.status(400).json({
+                message: "assignedTo must be an array of user IDs",
+            });
+        }
+
+You make sure assignedTo is actually an array (e.g., ["userId1", "userId2"]) instead of just a single string or other type. If not, you return a 400 Bad Request.
+
+
+    task.assignedTo = req.body.assignedTo;
+   }
+
+    If the input passes validation, update the assignedTo field with the new user IDs array.
+
+
+    const updatedTask = await task.save();
+Now, you save all the changes to the database with task.save() and store the result in updatedTask.
+
+------------------------------------------------------------------------------------------------------------------
+for deleting the task ------
+
+just find the id and use deleteOne
+
+-----------------------------------------------------------------------------------------------------------------------------
+updating task statusSummary
+
+const updateTaskStatus=async() =>
+    {
+        try {
+
+            const task=await Task.findById(req.params.id);
+
+            if(!task) return res.status(404).json({message: "task not found"})
+
+         const isAssigned=task.assignedTo.some(
+            (userId)=>userId.toString() === req.user.id.toString());
+
+        
+          if(req.user.role!=="admin" && !assignedTo)
+           {
+            return res.status(403).json({message:"not authorized"})           
+           }
+
+
+           if(task.status === "Completed")
+           {
+            task.todoCheckList.firEach((item) => (item.completed = true));
+            task.progress=100;
+           }
+        await task.save();
+        res.json({message: "Task Dtatus updated",task});
+
+        } catch (error) 
+        {
+            res.status(500).json({message:"server error",error:error.message});
+            
+        }
+    
+    }
+
+
+
+    const isAssigned = task.assignedTo.some(
+    (userId) => userId.toString() === req.user._id.toString()
+);
+✅ .some(...)
+This is an Array method that:
+Checks if at least one item in the array satisfies the given condition.
+
+✅ (userId) => ...
+This is a callback function.
+It runs for each userId inside assignedTo.
+
+
+✅ userId.toString()
+userId is a MongoDB ObjectId.
+You cannot directly compare it to another ID using === because:
+ObjectIds are objects, not strings.
+.toString() converts it to a string (like: "642a...fe2").
+
+✅ req.user._id.toString()
+This is the current logged-in user’s ID (attached in your middleware).
+You also convert this to a string for safe comparison.
+
+You’re checking if the logged-in user is among the users assigned to this task.
+.some() will return true if any userId matches the current user's ID.
+You correctly convert ObjectIds to strings before comparing.
+
+
+if (req.user.role !== "admin" && !isAssigned)
+Admins can update any task.
+Non-admins can only update if they are assigned to the task.
+
+
+if (task.status === "Completed") {
+    task.todoCheckList.forEach((item) => (item.completed = true));
+    task.progress = 100;
+}
+
+task.todoCheckList.forEach(...)
+todoCheckList is an array of subtasks or checklist items.
+.forEach() is used to loop through each subtask.
+
+
+(item) => (item.completed = true)
+For each subtask (item), this line:
+Sets its completed flag to true.
+So all items now become:
+
+task.progress = 100;
+This manually sets the progress value to 100%.
+This is a numeric way of saying:
+“All subtasks are done. Mark task as fully completed.”
+
+If the task status is already marked as Completed, it marks all checklist items as completed = true.
+Sets the progress to 100.
+
+----------------------------------------------
+
+const updateTaskChecklist = async (req, res) => {
+            try {
+                const { todoCheckList } = req.body;
+                const task = await Task.findById(req.params.id);
+        
+                if (!task) {
+                    return res.status(404).json({ message: "Task not found" });
+                }
+        
+                const isAssigned = task.assignedTo.some(
+                    (id) => id.toString() === req.user._id.toString()
+                );
+        
+                if (!isAssigned && req.user.role !== "admin") {
+                    return res.status(403).json({ message: "Not authorized to update checklist" });
+                }
+        
+                task.todoCheckList = todoCheckList;
+        
+                // Update progress
+                const completedCount = Array.isArray(task.todoCheckList)
+                    ? task.todoCheckList.filter((item) => item.completed).length
+                    : 0;
+        
+                const totalItems = task.todoCheckList.length || 0;
+                task.progress = totalItems > 0
+                    ? Math.round((completedCount / totalItems) * 100)
+                    : 0;
+        
+                // Auto status update
+                if (task.progress === 100) {
+                    task.status = "Completed";
+                } else if (task.progress > 0) {
+                    task.status = "InProgress";
+                } else {
+                    task.status = "Pending";
+                }
+        
+                await task.save();
+        
+                const updatedTask = await Task.findById(req.params.id).populate(
+                    "assignedTo",
+                    "name email profileImageUrl"
+                );
+        
+                res.json({ message: "Task checklist updated", task: updatedTask });
+        
+            } catch (error) {
+                res.status(500).json({ message: "Server error", error: error.message });
+            }
+    
+    }
+
+
+const { todoCheckList } = req.body;
+
+{ todoCheckList } – Destructuring syntax to extract todoCheckList from req.body.
+req.body – The data sent by the client (usually JSON).
+
+
+const task = await Task.findById(req.params.id);
+req.params.id – The :id parameter from the route (/tasks/:id).
+
+
+
+const isAssigned = task.assignedTo.some(
+    (id) => id.toString() === req.user._id.toString()
+);
+
+task.assignedTo – Array of ObjectIds of users assigned to this task.
+.some() – Checks if at least one item matches the condition.
+id.toString() – Convert ObjectId to string for comparison.
+req.user._id – Logged-in user's ID from the auth middleware.
+
+
+if (!isAssigned && req.user.role !== "admin") {
+    return res.status(403).json({ message: "Not authorized to update checklist" });
+}
+If the user is not assigned to the task AND not an admin, deny access with 403 Forbidden.
+
+
+
+task.todoCheckList = todoCheckList;
+Assigns the new checklist to the todoCheckList field in the task document.
+
+
+const completedCount = Array.isArray(task.todoCheckList)
+    ? task.todoCheckList.filter((item) => item.completed).length
+    : 0;
+
+Array.isArray() – Checks if todoCheckList is an array.
+.filter() – Filters items where item.completed is true.
+.length – Counts how many items are completed.
+
+
+const totalItems = task.todoCheckList.length || 0;
+Gets total number of checklist items.
+|| 0 – Fallback in case length is undefined.
+
+
+task.progress = totalItems > 0
+    ? Math.round((completedCount / totalItems) * 100)
+    : 0;
+
+
+If there's at least one item, calculate percentage of completed items.
+Math.round() – Rounds result to nearest integer.
+Otherwise, progress is 0
+
+
+if (task.progress === 100) {
+    task.status = "Completed";
+} else if (task.progress > 0) {
+    task.status = "InProgress";
+} else {
+    task.status = "Pending";
+}
+100% = Completed
+> 0% = InProgress
+0% = Pending
+
+
+const updatedTask = await Task.findById(req.params.id).populate(
+    "assignedTo",
+    "name email profileImageUrl"
+);
+
+Fetch the latest version of the task after saving.
+.populate() – Pulls user details (from the User collection) into assignedTo.
+"name email profileImageUrl" – Only include these fields.
+
+
+------------------------------------------------------------------------------------------------------
+
+getUserDashboardData-------
+const getDashboardData=async(req,res) =>
+    {
+        try {
+
+            //fetch statistics
+            const totalTasks=await Task.countDocuments();
+
+            const pendingTasks=await Task.countDocuments({status:"Pending"});
+            const completedTasks=await Task.countDocuments({status:"Completed"});
+            const overdueTasks=await Task.countDocuments(
+       {   //"Find all tasks that are overdue and not yet marked as 'Completed'."
+                    status:{$ne: "Completed"},             ///filter ne--> not equal                                       
+                     dueDate: {$lt:new Date()},             //$lt: new Date() → due date is before now (i.e., deadline missed)
+                });
+
+            
+            const taskStatuses=["Pending","InProgress", "Completed"];
+            const taskDistributionRaw=await Task.aggregate([
+
+                    {
+                        $group:{
+                            _id:"$status",
+                            count:{$sum:1},
+                        },
+                    },
+                ]);
+
+            
+                const taskDistribution = taskStatuses.reduce((acc, status) => {
+                    const formattedKey=status.replace(/\s+/g,"");
+                    acc[formattedKey]=taskDistributionRaw.find((item) => item._id === status)?.count || 0;
+                    return acc;
+
+
+                    //ensure taskPriorities levels are included
+                    const taskPriorities=["Low","Medium","High"];
+                    const taskPriorityLevelsRaw=await Task.aggregate([
+                        {
+                            $group:{
+                                _id:"$priority",
+                                count: {$sum:1},
+                            },
+                        },
+                    ]);
+
+                    const taskPriorityLevels=taskPriorities.reduce((acc,priority)=>
+                    {
+                        acc[priority]=taskPriorityLevelsRaw.find((item) => item._id === priority)?.count||0;
+                        return acc;
+                    }, {});
+
+
+                    //fetch recent 10 tasks
+                    const recentTasks=await Task.find()
+                    .sort({createdAt:-1})
+                     .limit(10)
+                     .select("title status prority dueDate createdAt");
+
+
+                     res.status(200).json({
+                        statistics:{
+                            totalTasks,
+                            pendingTasks,
+                            completedTasks,
+                            overdueTasks,
+                        },
+                        charts:{
+                            taskDistribution,
+                            taskPriorityLevels,
+                        },
+                        recentTasks,
+                     });
+      
+        } catch (error) 
+        {
+            res.status(500).json({message:"server error",error:error.message});
+            
+        }
+    
+    }
+
+const totalTasks = await Task.countDocuments();
+Counts all tasks in the database.
+
+
+const pendingTasks = await Task.countDocuments({ status: "Pending" });
+const completedTasks = await Task.countDocuments({ status: "Completed" });
+
+Counts tasks that are specifically Pending and Completed.
+
+
+
+const overdueTasks = await Task.countDocuments({
+    status: { $ne: "Completed" },   // not completed
+    dueDate: { $lt: new Date() },   // due date is before NOW → overdue
+});
+Finds tasks that:
+Are not yet completed AND
+Their deadline has already passed.
+
+const taskStatuses = ["Pending", "InProgress", "Completed"];
+const taskDistributionRaw=await Task.aggregate([])
+
+taskStatuses is an array:
+["Pending", "In Progress", "Completed"]
+
+MongoDB Aggregation: Groups tasks by their status and counts them.
+
+Returns something like:
+[
+  { _id: "Pending", count: 5 },
+  { _id: "Completed", count: 3 }
+]
+
+
+const taskDistribution = taskStatuses.reduce((acc, status) => {
+const formattedKey = status.replace(/\s+/g, "");
+
+
+
+.reduce() loops through each status (even if it's not in raw data) and:
+Removes spaces (e.g., "In Progress" → "InProgress")
+Finds matching count from taskDistributionRaw
+If not found → sets count to 0\
+
+
+taskDistribution: The final object we’re creating.
+reduce((acc, status) => {...}, {}):
+acc = accumulator = object we’re building.
+status = current status being processed ("Pending", "In Progress", etc.)
+{} = initial value of the accumulator — an empty object.
+
+
+ What's happening?
+Removes all whitespace from status. For example:
+"In Progress" → "InProgress"
+
+const formattedKey: A cleaned-up version of the status, used as the object key.
+.replace(/\s+/g, ""):
+
+\s+ = match any whitespace characters (like space, tab).
+g = global flag (replace all occurrences).
+"" = replace with nothing (i.e., remove them).
+
+
+acc[formattedKey] = 
+    taskDistributionRaw.find((item) => item._id === status)?.count || 0;
+
+.find(...) = looks for the item with _id matching the current status.
+?.count = optional chaining; safely gets count if item exists.
+|| 0 = if item is not found or count is undefined, default to 0.
+
+💡 Keywords:
+acc[formattedKey] = assign the count to this cleaned-up key.
+.find(...) = JavaScript array method to get the first matching element.
+?. = optional chaining (safe way to access deeply nested properties).
+|| 0 = fallback in case nothing is found.
+
+--------------------------------
+We are finding the matching item from taskDistributionRaw, which is an array returned by MongoDB's aggregation like this:
+[
+  { _id: "Pending", count: 4 },
+  { _id: "Completed", count: 5 }
+]
+
+
+return acc;
+This returns the accumulator object to the next iteration of .reduce().
+
+
+taskDistribution["All"] = totalTasks;\
+Adds a final property All to show the total number of tasks.
+{
+  Pending: 4,
+  InProgress: 3,
+  Completed: 5,
+  All: 12
+}
+----------------------------------
+same doing for priority
+
+  const taskPriorities = ["Low", "Medium", "High"];
+        const taskPriorityLevelsRaw = await Task.aggregate([
+            {
+                $group: {
+                    _id: "$priority",
+                    count: { $sum: 1 },
+                },
+            },
+        ]);
+
+Groups tasks by their priority and counts how many of each.
+
+
+{
+  Low: 3,
+  Medium: 6,
+  High: 2
+}
+--------------------------------------
+  const recentTasks = await Task.find()
+            .sort({ createdAt: -1 }) // Sort by newest first
+            .limit(10)
+            .select("title status priority dueDate createdAt");
+
+Fetches latest 10 tasks with only the fields needed for the dashboard.
+
+
+
+
+              res.status(200).json({
+            statistics: {
+                totalTasks,
+                pendingTasks,
+                completedTasks,
+                overdueTasks,
+            },
+            charts: {
+                taskDistribution,
+                taskPriorityLevels,
+            },
+
+            recentTasks,
+
+            Sends all analytics data in a clean response object:
+
+statistics: Counts
+charts: Breakdown data
+recentTasks: Latest 10 tasks
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------
+for getUserDashboardData
+
+mostle same
+but the difference to be noted is 
+
+ const taskPriorities=["Low","Medium","High"];
+              const taskPriorityLevelsRaw=await Task.aggregate([
+                { $match: {assignedTo:userId}},
+                {$group: {_id:"$priority",count:{$sum:1}}},
+              ])
+
+
+$match: filters only tasks that are assigned to the current user.
+$group: groups them by their priority (_id: "$priority") and counts them.
+
+
+       
