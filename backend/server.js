@@ -19,6 +19,8 @@ const app= express();
        credentials: true,
     })
   );
+
+  app.options('*', cors());
   //connect to db
   connectDB();
   app.use(express.json());
