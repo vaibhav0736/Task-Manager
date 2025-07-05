@@ -13,7 +13,7 @@ const app= express();
 //middleware to handle cors requests
  app.use(
     cors({
-      origin: process.env.CLIENT_URL || "*",
+      origin: process.env.CLIENT_URL || "https://task-manager-frontweb.onrender.com",
       methods:[ "GET", "POST", "PUT", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
